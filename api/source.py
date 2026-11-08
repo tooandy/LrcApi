@@ -76,6 +76,12 @@ def file_viewer(filename):
                           'txt', 'lrc', 'webp', 'jpg', 'jpeg', 'png', 'bmp', 'gif', 'webp', 'svg', 'ico', 'mp4', 'webm',
                           'mkv', 'avi', 'mov', 'wmv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b', 'm4v', 'm4r', 'm4p', 'm4b',)
     if filename.lower().endswith(ALLOWED_EXTENSIONS):
+        music_root = os.environ.get("HOME_SERVER_MUSIC_ROOT")
+        if music_root:
+            from api.lyrics import local_music_path
+            filename = local_music_path("/" + filename.lstrip("/"))
+            if not filename:
+                abort(403)
         try:
             return send_from_directory(os.path.dirname(filename), os.path.basename(filename))
         except FileNotFoundError:

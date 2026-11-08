@@ -127,7 +127,7 @@ def get_lyrics():
     mode = _params("get")
     if mode is None:
         return _json_error("Invalid LRCLIB track metadata", 400)
-    return _request(request.path, mode)
+    return _request("/api/get", mode)
 
 
 @app.route("/api/search", methods=["GET"], endpoint="lrclib_search")

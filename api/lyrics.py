@@ -17,6 +17,24 @@ from mod.auth import require_auth_decorator
 from mod.args import args
 
 
+def local_music_path(path: str) -> str:
+    """Map legacy Docker /music paths to Mac NAS mount; disallow traversal."""
+    if not path:
+        return ""
+    root = os.environ.get("HOME_SERVER_MUSIC_ROOT")
+    if not root:
+        return path
+    root = os.path.realpath(root)
+    allowed = ("/music", "/mnt/v2/Music", root)
+    for prefix in allowed:
+        if path == prefix or path.startswith(prefix + "/"):
+            relative = os.path.relpath(path, prefix)
+            resolved = os.path.realpath(os.path.join(root, relative))
+            if resolved == root or resolved.startswith(root + os.sep):
+                return resolved
+    return ""
+
+
 def read_file_with_encoding(file_path: str, encodings: list[str]):
     for encoding in encodings:
         try:
@@ -35,7 +53,7 @@ def lyrics():
     # 通过request参数获取文件路径
     if not bool(request.args):
         abort(404, "请携带参数访问")
-    path = unquote_plus(request.args.get('path', ''))
+    path = local_music_path(unquote_plus(request.args.get('path', '')))
     # 根据文件路径查找同名的 .lrc 文件
     if path:
         lrc_path = os.path.splitext(path)[0] + '.lrc'
@@ -54,7 +72,7 @@ def lyrics():
         title = unquote_plus(request.args.get('title', ''))
         artist = unquote_plus(request.args.get('artist', ''))
         album = unquote_plus(request.args.get('album', ''))
-        result: list = searchx.search_all(title=title, artist=artist, album=album, timeout=30)
+        result: list = searchx.search_all(title=title, artist=artist, album=album, timeout=12, duration=request.args.get('duration'))
         if not result[0].get('lyrics'):
             return "Lyrics not found.", 404
         return result[0].get('lyrics')
@@ -69,7 +87,7 @@ def lyrics():
 def lrc_json():
     if not bool(request.args):
         abort(404, "请携带参数访问")
-    path = unquote_plus(request.args.get('path', ''))
+    path = local_music_path(unquote_plus(request.args.get('path', '')))
     title = unquote_plus(request.args.get('title', ''))
     artist = unquote_plus(request.args.get('artist', ''))
     album = unquote_plus(request.args.get('album', ''))
@@ -87,7 +105,7 @@ def lrc_json():
                     "lyrics": file_content
                 })
 
-    lyrics_list = searchx.search_all(title, artist, album)
+    lyrics_list = searchx.search_all(title, artist, album, duration=request.args.get('duration'))
     if lyrics_list:
         for i in lyrics_list:
             if not i:

@@ -1,40 +1,30 @@
 from concurrent import futures
+import logging
+import os
 
-from mod.searchx import api, kugou, netease
+from mod.searchx import kugou, netease, lrclib
+
+LOGGER = logging.getLogger(__name__)
 
 
-def search_all(title, artist, album, timeout=15):
-    funcs = [api, kugou, netease]
+def search_all(title, artist, album, timeout=15, duration=None):
+    """Preserve legacy providers; use LRCLIB only when both produce no lyrics."""
+    sources = (kugou, netease)
     results = []
-
-    def request(task):
-        res: list = task.search(title, artist, album)
-        if isinstance(res, list):
-            results.extend(res)
-
-    with futures.ThreadPoolExecutor() as executor:
-        _futures = []
-        for func in funcs:
-            _futures.append(executor.submit(request, func))
-
-        # 等待所有任务完成，或回收超时任务，处理TimeoutError
-        try:
-            for future in futures.as_completed(_futures, timeout=timeout):
-                future.result()
-        except futures.TimeoutError:
-            # 记录超时任务
-            pass
-
-        # 回收超时任务
-        for future in _futures:
-            if future.done():
-                if future.exception():
-                    # 处理异常任务
-                    pass
-            else:
-                future.cancel()
-
+    with futures.ThreadPoolExecutor(max_workers=2) as executor:
+        tasks = [executor.submit(source.search, title, artist, album) for source in sources]
+        completed, pending = futures.wait(tasks, timeout=timeout)
+        for task in pending:
+            task.cancel()
+        for task in tasks:
+            if not task.done() or task.cancelled():
+                continue
+            try:
+                value = task.result()
+                if isinstance(value, list):
+                    results.extend(item for item in value if isinstance(item, dict) and item.get("lyrics"))
+            except Exception as exc:
+                LOGGER.warning("Legacy lyric source failed: %s", type(exc).__name__)
+    if not results and os.environ.get("LRCAPI_LRCLIB_FALLBACK", "1") == "1":
+        return lrclib.search(title=title, artist=artist, album=album, duration=duration)
     return results
-
-if __name__ == "__main__":
-    print(search_all("大地", "Beyond", ""))

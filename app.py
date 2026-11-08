@@ -12,9 +12,10 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-os.makedirs(os.path.join(os.path.dirname(sys.argv[0]), 'logs'), exist_ok=True)
+log_dir = os.environ.get('LRCAPI_LOG_DIR', os.path.join(os.path.dirname(sys.argv[0]), 'logs'))
+os.makedirs(log_dir, exist_ok=True)
 file_handler = RotatingFileHandler(
-    os.path.join(os.path.dirname(sys.argv[0]), 'logs', 'log.txt'),
+    os.path.join(log_dir, 'log.txt'),
     maxBytes=1024*1024,
     backupCount=5
 )
@@ -52,10 +53,8 @@ if __name__ == '__main__':
         logging.getLogger('').setLevel(logging.DEBUG)
 
     logger.info("正在启动服务器")
-    logger.info("您可通过爱发电支持我们，爱发电主页 https://afdian.com/a/ghacg")
-    logger.info("高质量翻译服务由 https://lrc.cx 提供")
-    logger.info("年付99元-香港服务器：https://my.yecaoyun.com/aff.php?aff=3296")
-    check_update.run(version=args.version)
+    if os.environ.get("LRCAPI_CHECK_UPDATES") == "1":
+        check_update.run(version=args.version)
     # 注册 Blueprint 到 Flask 应用
     app.register_blueprint(v1_bp)
     # 启动
