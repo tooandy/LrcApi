@@ -1,5 +1,5 @@
 from . import cover, login, lyrics, source, tag, time, file, db
-from . import waf
+from . import waf, lrclib_compat
 
 """
 引入所有子模块
