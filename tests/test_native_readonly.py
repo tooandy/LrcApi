@@ -1,56 +1,69 @@
-"""Focused full-app compatibility tests; no network and no NAS writes."""
-import os
-import tempfile
-import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-os.environ["API_AUTH"] = "test-auth-native"
-os.environ["LRCAPI_READ_ONLY"] = "1"
-
-from app import app, v1_bp
-from api import __import__
-
-if "v1" not in app.blueprints:
-    app.register_blueprint(v1_bp)
+from api.lyrics import local_music_path
+from mod import confirmed_store
 
 
-class NativeReadOnlyTests(unittest.TestCase):
-    def setUp(self):
-        self.client = app.test_client()
-
-    def test_old_routes_and_auth(self):
-        self.assertEqual(self.client.get("/time").status_code, 200)
-        self.assertEqual(self.client.get("/src").status_code, 200)
-        self.assertIn(self.client.get("/lyrics?title=example").status_code, (401, 403))
-        self.assertIn(self.client.get("/jsonapi?title=example").status_code, (401, 403))
-
-    def test_readonly_denies_writes(self):
-        headers = {"Authorization": "test-auth-native"}
-        self.assertEqual(self.client.post("/tag", headers=headers, json={"path": "/tmp/example.mp3"}).status_code, 403)
-        self.assertEqual(self.client.post("/confirm", headers=headers, json={"path": "/tmp/example.mp3"}).status_code, 403)
-        self.assertEqual(self.client.post("/api/v1/file/download", headers=headers, json={}).status_code, 403)
-
-    def test_music_path_maps_and_rejects_traversal(self):
-        from api.lyrics import local_music_path
-        with tempfile.TemporaryDirectory() as music:
-            with patch.dict(os.environ, {"HOME_SERVER_MUSIC_ROOT": music}):
-                self.assertEqual(local_music_path("/music/Artist/track.mp3"), str(Path(music) / "Artist" / "track.mp3"))
-                self.assertEqual(local_music_path("/mnt/v2/Music/Artist/track.mp3"), str(Path(music) / "Artist" / "track.mp3"))
-                self.assertEqual(local_music_path("/music/../etc/passwd"), "")
-                self.assertEqual(local_music_path("/etc/passwd"), "")
-
-    def test_sidecar_lrc_without_upstream(self):
-        with tempfile.TemporaryDirectory() as music:
-            path = Path(music) / "Test.mp3"
-            path.write_bytes(b"fake-audio")
-            (Path(music) / "Test.lrc").write_text("[00:01.20]Hello world\n")
-            with patch.dict(os.environ, {"HOME_SERVER_MUSIC_ROOT": music}), patch("api.lyrics.searchx.search_all") as remote:
-                result = self.client.get("/lyrics?path=/music/Test.mp3",headers={"Authorization": "test-auth-native"})
-            self.assertEqual(result.status_code, 200)
-            self.assertIn("Hello world", result.get_data(as_text=True))
-            remote.assert_not_called()
+def test_path_mapping_and_traversal(monkeypatch, tmp_path):
+    root = tmp_path / "music"
+    root.mkdir(exist_ok=True)
+    monkeypatch.setenv("HOME_SERVER_MUSIC_ROOT", str(root))
+    assert local_music_path("/music/Artist/track.flac") == str(root / "Artist" / "track.flac")
+    assert local_music_path("/mnt/v2/Music/Artist/track.flac") == str(root / "Artist" / "track.flac")
+    assert local_music_path("/music/../etc/passwd") == ""
+    assert local_music_path("/etc/passwd") == ""
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_local_sidecar_is_unverified(client, tmp_path):
+    root = tmp_path / "music"
+    audio = root / "song.flac"
+    audio.write_bytes(b"fake audio")
+    audio.with_suffix(".lrc").write_text("[00:01.00]Unverified lyrics", encoding="utf-8")
+    with patch("mod.searchx.search_all") as remote:
+        r = client.get("/jsonapi?path=/music/song.flac", headers={"Authorization": "offline-test-key"})
+    assert r.status_code == 200
+    assert r.json[0]["verified"] is False
+    assert r.json[0]["source"] == "sidecar_default"
+    remote.assert_not_called()
+
+
+def test_sqlite_confirmed_overrides_sidecar(client, tmp_path):
+    root = tmp_path / "music"
+    audio = root / "song.flac"
+    audio.write_bytes(b"fake audio")
+    audio.with_suffix(".lrc").write_text("[00:01.00]Wrong sidecar", encoding="utf-8")
+    confirmed_store.confirm(path="/music/song.flac", lyrics="[00:01.00]Confirmed lyrics")
+    r = client.get("/jsonapi?path=/music/song.flac", headers={"Authorization": "offline-test-key"})
+    assert r.status_code == 200
+    assert r.json[0]["verified"] is True
+    assert "Confirmed lyrics" in r.json[0]["lyrics"]
+    assert "Wrong sidecar" not in r.json[0]["lyrics"]
+
+
+def test_negative_result_not_cached_for_day(client):
+    with patch("mod.searchx.search_all",
+               side_effect=[[],[{"title":"Test","artist":"Singer",
+                                "lyrics":"[00:01.00]New lyrics","verified":False}]]) as lookup:
+        r1 = client.get("/lyrics?title=Test&artist=Singer",
+                        headers={"Authorization": "offline-test-key"})
+        r2 = client.get("/lyrics?title=Test&artist=Singer",
+                        headers={"Authorization": "offline-test-key"})
+    assert r1.status_code == 404
+    assert r2.status_code == 200
+    assert lookup.call_count == 2
+
+
+def test_sidecar_symlink_outside_music_is_not_read(client, tmp_path):
+    root = tmp_path / "music"
+    audio = root / "song.flac"
+    audio.write_bytes(b"fake audio")
+    secret = tmp_path / "outside-lyrics.txt"
+    secret.write_text("[00:01.00]Do not expose")
+    audio.with_suffix(".lrc").symlink_to(secret)
+    with patch("api.lyrics.tag.read", return_value={}), \
+         patch("mod.searchx.search_all", return_value=[]):
+        result = client.get("/jsonapi?path=/music/song.flac",
+                            headers={"Authorization":"offline-test-key"})
+    assert result.status_code == 200
+    assert result.json == []

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>歌词纠错台 · Home LrcAPI</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">♪</div>
+        <div>
+          <div class="eyebrow">HOME MEDIA · LYRIC STUDIO</div>
+          <h1>歌词纠错台<span class="dot">.</span></h1>
+        </div>
+      </div>
+      <div class="top-status"><span class="status-led"></span> 仅本机可访问 <span class="status-divider">/</span> 不修改 NAS 文件</div>
+    </header>
+
+    <main class="workspace">
+      <aside class="browser-panel">
+        <div class="panel-title">
+          <div>
+            <div class="eyebrow">LIBRARY</div>
+            <h2>找到那首歌</h2>
+          </div>
+          <button class="icon-button" id="folder-up" title="返回上一级" type="button" aria-label="上一级">↑</button>
+        </div>
+        <p class="muted">逐级浏览歌手与专辑，无需扫描整个音乐库。</p>
+        <div class="search-field">
+          <span class="search-icon">⌕</span>
+          <input id="folder-search" type="search" placeholder="筛选当前文件夹" autocomplete="off" aria-label="筛选当前文件夹">
+        </div>
+        <div class="breadcrumb" id="breadcrumb">音乐库</div>
+        <div class="file-list" id="file-list" aria-live="polite">
+          <div class="empty-list">正在读取音乐目录…</div>
+        </div>
+        <p class="folder-footnote" id="browse-note"></p>
+      </aside>
+
+      <section class="editor-panel">
+        <div class="editor-header">
+          <div>
+            <div class="eyebrow">LYRIC EDITOR</div>
+            <h2 id="song-title">选一首歌曲开始</h2>
+            <p class="song-subtitle" id="song-subtitle">在左侧选择歌曲；现有同名歌词默认使用，不需要逐首确认。</p>
+          </div>
+          <span class="state-chip neutral" id="lyric-state">尚未选择</span>
+        </div>
+
+        <div class="onboarding" id="onboarding">
+          <div class="onboarding-note">
+            <div class="onboarding-icon">✦</div>
+            <h3>只修正真正有问题的歌词</h3>
+            <p>原有 .lrc 与内嵌歌词继续默认生效。如果发现时间轴、错字或整首匹配错误，在这里改好后保存即可。</p>
+            <div class="features">
+              <span>01 · 默认使用本地歌词</span>
+              <span>02 · 修正覆盖到 SQLite</span>
+              <span>03 · 随时撤销回原版</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="editor-content" hidden>
+          <div class="track-summary">
+            <div><span class="meta-label">歌手</span><span id="meta-artist">—</span></div>
+            <div><span class="meta-label">专辑</span><span id="meta-album">—</span></div>
+            <div><span class="meta-label">时长</span><span id="meta-duration">—</span></div>
+          </div>
+
+          <div class="lyric-columns">
+            <div class="lyric-section">
+              <div class="section-heading">
+                <h3>当前生效歌词</h3>
+                <span class="section-caption" id="current-source">本地默认</span>
+              </div>
+              <textarea id="current-lyrics" readonly spellcheck="false" aria-label="当前生效歌词"></textarea>
+            </div>
+            <div class="lyric-section">
+              <div class="section-heading">
+                <h3>你的修正版</h3>
+                <button class="text-button" id="reset-draft" type="button">恢复当前内容</button>
+              </div>
+              <textarea id="draft-lyrics" spellcheck="false" placeholder="在这里修正歌词、时间轴或整首替换…" aria-label="修正版歌词"></textarea>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <button class="primary-button" id="save-btn" type="button">保存纠错到 SQLite</button>
+            <button class="secondary-button" id="revert-btn" type="button" disabled>撤销人工修正</button>
+            <button class="ghost-button" id="search-candidates" type="button">寻找网络候选 <span aria-hidden="true">↗</span></button>
+            <button class="secondary-button" id="export-btn" type="button" hidden>同步到同名 .lrc</button>
+            <button class="secondary-button" id="restore-export-btn" type="button" hidden>恢复原 .lrc</button>
+          </div>
+          <div class="helper-line">“保存”仅写 SQLite。需要 Navidrome 读取修正时，可单独确认同步 .lrc；写入前会在 Mac 本地备份旧文件。永不修改音频本体。</div>
+
+          <section class="extras">
+            <details id="candidate-panel">
+              <summary>网络歌词候选 <span id="candidate-count"></span></summary>
+              <div class="candidate-items" id="candidate-items"><p class="muted">点击“寻找网络候选”后，将列出可供你人工挑选的版本。</p></div>
+            </details>
+            <details id="history-panel">
+              <summary>纠错历史 <span id="history-count"></span></summary>
+              <div class="history-items" id="history-items"><p class="muted">尚无人工修正记录。</p></div>
+            </details>
+          </section>
+        </div>
+      </section>
+    </main>
+    <footer class="app-footer">
+      <span>Home LrcAPI · correction workspace</span>
+      <span>SQLite 保留人工修正；音乐文件原样保留。</span>
+    </footer>
+  </div>
+  <div class="toast" role="status" id="toast" aria-live="polite"></div>
+</body>
+</html>

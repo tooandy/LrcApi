@@ -1,44 +1,38 @@
-import unittest
-from unittest.mock import Mock, patch
-from mod.searchx import lrclib
+import json
+from unittest.mock import patch, Mock
+
+from mod.searchx.lrclib import CLIENT, LRCLIBClient, search
 
 
-class LRCLIBLegacyFallbackTests(unittest.TestCase):
-    def setUp(self):
-        lrclib._cache.clear()
-        lrclib._cooldown_until=0
-
-    def test_strict_metadata_and_timestamp(self):
-        payload = [
-            {"trackName": "I Want to Live", "artistName": "Borislav Slavov",
-             "albumName": "Baldur's Gate 3", "duration": 233,
-             "syncedLyrics":"[00:10.00]Sample"},
-            {"trackName": "Other Song", "artistName": "Borislav Slavov",
-             "albumName": "Baldur's Gate 3", "duration": 233,
-             "syncedLyrics":"[00:10.00]Wrong"},
-        ]
-        response = Mock(status_code=200)
-        response.json.return_value = payload
-        with patch.object(lrclib.requests, "get", return_value=response) as req:
-            result=lrclib.search("I Want to Live","Borislav Slavov","Baldur's Gate 3",233)
-        self.assertEqual(len(result),1)
-        self.assertEqual(result[0]["source"], "lrclib")
-        self.assertEqual(req.call_args.kwargs["timeout"],(3,9))
-
-    def test_duration_rejection(self):
-        response=Mock(status_code=200)
-        response.json.return_value=[{"trackName":"A","artistName":"B","albumName":"C",
-          "duration":200,"syncedLyrics":"[00:00.12]Text"}]
-        with patch.object(lrclib.requests, "get", return_value=response):
-            self.assertEqual(lrclib.search("A","B","C",233),[])
-
-    def test_rate_limit_cools_down(self):
-        response=Mock(status_code=429,headers={"Retry-After":"120"})
-        with patch.object(lrclib.requests, "get",return_value=response) as req:
-            self.assertEqual(lrclib.search("A","B"),[])
-            self.assertEqual(lrclib.search("Different","B"),[])
-        self.assertEqual(req.call_count,1)
+def test_strict_match_synced_only():
+    payload = [
+        {"trackName":"Song","artistName":"Singer","albumName":"Album","duration":200,
+         "syncedLyrics":"[00:02.00]Valid"},
+        {"trackName":"Other","artistName":"Singer","albumName":"Album","duration":200,
+         "syncedLyrics":"[00:02.00]Incorrect"},
+    ]
+    with patch.object(CLIENT,"get",return_value=(200,json.dumps(payload).encode(),{})):
+        found=search("Song","Singer","Album",200)
+    assert len(found)==1 and found[0]["source"]=="lrclib"
+    assert found[0]["verified"] is False
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_wrong_duration_is_rejected():
+    payload = [{"trackName":"Song","artistName":"Singer","duration":100,
+                "syncedLyrics":"[00:01.00]OK"}]
+    with patch.object(CLIENT, "get",return_value=(200,json.dumps(payload).encode(),{})):
+        assert search("Song","Singer",duration=120)==[]
+
+
+def test_cached_only_and_retry_after_share_state(monkeypatch):
+    fake = Mock()
+    fake.status_code = 429
+    fake.headers = {"Retry-After": "120"}
+    with patch("mod.searchx.lrclib.requests.get", return_value=fake) as req:
+        target = LRCLIBClient()
+        code, body, headers = target.get("/api/search",{"q":"Track"})
+        assert code == 429
+        assert int(headers["Retry-After"]) == 120
+        assert target.get("/api/get",{"track_name":"Track","artist_name":"Singer"})[0] == 429
+        assert target.get("/api/search",{"q":"Track"},only_cached=True)[0] == 404
+        assert req.call_count == 1

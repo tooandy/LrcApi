@@ -2,7 +2,7 @@
 # Mac mini launchd native LrcAPI. Secrets stay outside the source checkout.
 set -euo pipefail
 umask 077
-ROOT="${HOME}/Documents/Code/LrcApi"
+ROOT="${LRCAPI_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 SECRETS="${HOME}/.config/home-server/lrcapi.env"
 test -r "$SECRETS" || { echo "Missing LrcAPI auth configuration" >&2; exit 1; }
 set -a
@@ -16,5 +16,7 @@ export LRCAPI_CHECK_UPDATES=0
 export LRCAPI_CACHE_DIR="${HOME}/Library/Caches/HomeServer/LrcAPI"
 export LRCAPI_LOG_DIR="${HOME}/Library/Logs/HomeServer/LrcAPI"
 mkdir -p "$LRCAPI_CACHE_DIR" "$LRCAPI_LOG_DIR"
+export LRCAPI_DB_PATH="${LRCAPI_DB_PATH:-$HOME/Library/Application Support/HomeServer/LrcAPI/overrides.sqlite3}"
+test -f "$ROOT/pyproject.toml" && test -f "$ROOT/uv.lock" || { echo "uv project lock missing" >&2; exit 1; }
 cd "$ROOT"
 exec "$ROOT/.venv/bin/python" "$ROOT/app.py" --ip 192.168.3.7 --port "${LRCAPI_LISTEN_PORT:-28884}"

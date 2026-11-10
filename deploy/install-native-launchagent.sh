@@ -3,7 +3,7 @@
 # This script is intended for use after creating a dedicated Python venv
 # and a private ~/.config/home-server/lrcapi.env file.
 set -euo pipefail
-ROOT="${HOME}/Documents/Code/LrcApi"
+ROOT="${LRCAPI_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 TEMPLATE="$ROOT/deploy/local.home-server.lrcapi.plist"
 DEST="${HOME}/Library/LaunchAgents/local.home-server.lrcapi.plist"
 mkdir -p "${HOME}/Library/LaunchAgents" "${HOME}/Library/Logs/HomeServer"

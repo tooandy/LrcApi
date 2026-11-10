@@ -1,19 +1,45 @@
-# LRCLIB read-only protocol adapter (staged, not deployed)
+# LRCLIB read-only API compatibility (Home LrcAPI 2.0)
 
-Routes: `GET /api/get`, `GET /api/get-cached`, `GET /api/get/<id>`,
-and `GET /api/search`. Responses preserve LRCLIB's JSON schema and IDs.
-The official LRCLIB API is the source; this is a bounded, authenticated
-proxy with a 256-record in-memory LRU cache, request timeouts, and 429/503
-Retry-After cooldown, not a self-hosted LRCLIB database.
+Existing clients use the same `Authorization` or `Authentication` header
+and existing domains as before. This is **not** a public LRCLIB mirror and
+does not support publishing, challenges, flagging or arbitrary file writes.
 
-**Authentication:** The existing LrcAPI API_AUTH/Authorization policy
-applies. LRCLIB clients unable to send Authorization headers will receive
-403 (or 401 depending on the auth configuration). Do not turn off
-authentication while port 28883 is bound on all interfaces.
+## Supported endpoints
 
-Not supported: /api/publish, /api/request-challenge, /api/flag, v2 API,
-offline lookups after restart, persistent cache, or fallback matching.
-These must not be advertised as fully protocol compatible.
+- `GET /api/search` — search by `q` or track metadata; missing query returns `[]`.
+- `GET /api/get` — `track_name` and `artist_name` required; `album_name` and
+  `duration` optional, to match current LRCLIB v1 semantics.
+- `GET /api/get/<id>` — fetch an existing LRCLIB record by ID.
+- `GET /api/get-cached` — returns only previously cached results from **this
+  instance**; unlike full LRCLIB, it does not query a replicated remote DB.
+- `GET /api/v2/search` — read-only beta proxy; may change with upstream.
 
-Production remains on tooandy/lrcapi 1.5.6 until integration/staging,
-music read-only access, performance and authentication are validated.
+There is one shared LRCLIB client for these routes and the legacy /lyrics
+fallback. It centralizes 429/503 cooldowns, Retry-After, 256-result bounded
+in-memory cache, upstream timeouts, User-Agent and response size limits.
+
+Clients that cannot set the household's authorization header will still
+receive HTTP 401. Never remove authentication to make such clients work over
+a public endpoint; use a trusted internal proxy if needed.
+
+## Song source priority
+
+1. Explicit manual correction from Mac-local SQLite.
+2. Existing same-name `.lrc` file (**accepted as correct by default**).
+3. Audio-embedded lyrics if there is no `.lrc`.
+4. Online providers after local lookup misses.
+
+Only the correction UI or owner-only CLI writes SQLite. The normal lyrics API
+does not mutate the music directory. Navidrome still reads the physical
+`.lrc` files, so an optional explicit sidecar export is available through
+the local-only editor. An APFS backup is taken first and the export can be
+reversed, subject to checksum verification.
+
+To run tests and dependency audit:
+
+```sh
+uv sync --locked
+uv run --locked pytest -q
+uv run --locked ruff check app.py api mod admin tests --select E9,F63,F7,F82
+uv run --locked pip-audit --path .venv/lib/python3.12/site-packages
+```

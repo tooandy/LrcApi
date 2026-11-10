@@ -295,7 +295,7 @@ async def search_track(session, title, artist, album):
                 {'ratio': ratio, "item": {
                     "artist": singer_name,
                     "album": album_name,
-                    "title": title,
+                    "title": song_item["name"],
                     "artist_id": singer_id,
                     "album_id": album_id,
                     "trace_id": song_id
@@ -330,7 +330,6 @@ async def search_track(session, title, artist, album):
     return result_list
 
 
-@lru_cache(maxsize=64)
 @no_error(throw=logger.info,
           exceptions=(aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, AttributeError))
 def search(title='', artist='', album=''):

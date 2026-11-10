@@ -107,7 +107,6 @@ async def a_search(title='', artist='', album=''):
         return [i.get('data') for i in sort_li]
 
 
-@lru_cache(maxsize=64)
 @no_error(throw=logger.info,
           exceptions=(aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, AttributeError))
 def search(title='', artist='', album=''):
