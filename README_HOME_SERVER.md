@@ -29,6 +29,9 @@ SQLite correction database.
   `~/Library/Application Support/HomeServer/LrcAPI/overrides.sqlite3` on
   **Mac local APFS**, not NFS. Files and their WAL/SHM are backed up together,
   or use the SQLite Online Backup API for a consistent online backup.
+  The editor automatically creates an APFS snapshot after each manual
+  correction and revocation, retaining the 20 newest snapshots. These are
+  local safety copies, not independent disaster-recovery backups.
 - Sidecar files: the physical `Artist/Album/Track.lrc` files on NAS remain
   fully compatible with Navidrome and are used by default.
 - Audio embedded tags: read only, never rewritten by this service.

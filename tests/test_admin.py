@@ -59,6 +59,9 @@ def test_default_local_correct_save_revoke_and_history(editor,tmp_path):
     },headers=headers())
     assert r.status_code==200
     assert r.json["writes_music"] is False
+    assert r.json["backup_ok"] is True
+    backups = list((tmp_path / "private/backups").glob("overrides-*.sqlite3"))
+    assert len(backups) == 1 and backups[0].stat().st_size > 0
     updated=editor.get("/api/track?path=Song.flac").json
     assert updated["status"]=="corrected"
     assert updated["active"]==corrected

@@ -268,7 +268,14 @@ def save():
             lyrics=lyric, path="/music/" + song["path"],
             title=meta["title"], artist=meta["artist"], album=meta["album"],
             duration=meta["duration"], source="local_editor", reviewer="owner")
-        return jsonify({"ok": True, "id": new_id, "writes_music": False})
+        backup_ok = True
+        try:
+            confirmed_store.snapshot()
+        except (ValueError, OSError) as exc:
+            LOG.error("SQLite snapshot failed: %s", type(exc).__name__)
+            backup_ok = False
+        return jsonify({"ok": True, "id": new_id, "writes_music": False,
+                        "backup_ok": backup_ok})
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 409
     except (ValueError, OSError) as exc:
@@ -288,7 +295,13 @@ def revoke():
             path="/music/" + song["path"],
             title=meta["title"], artist=meta["artist"],
             album=meta["album"], duration=meta["duration"], reviewer="owner")
-        return jsonify({"ok": True, "writes_music": False})
+        backup_ok = True
+        try:
+            confirmed_store.snapshot()
+        except (ValueError, OSError) as exc:
+            LOG.error("SQLite snapshot failed: %s", type(exc).__name__)
+            backup_ok = False
+        return jsonify({"ok": True, "writes_music": False, "backup_ok": backup_ok})
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 409
     except (ValueError, OSError) as exc:

@@ -174,11 +174,13 @@ async function save() {
   byId("save-btn").disabled=true;
   try {
     const current=state.selected;
-    await post("/api/save",{
+    const result=await post("/api/save",{
       path:current.path, expected_sha256:current.active_sha256, lyrics:text,
     });
     await selectTrack(current.path);
-    notify("已保存修正到 SQLite，NAS 音频和 .lrc 保持不变");
+    notify(result.backup_ok
+      ? "已保存到 SQLite 并自动备份，NAS 文件未改变"
+      : "已保存 SQLite，但本地备份失败，请检查日志", !result.backup_ok);
   } catch(error) {notify(error.message,true);}
   finally {state.busy=false;byId("save-btn").disabled=false;}
 }
@@ -190,11 +192,13 @@ async function revert() {
   byId("revert-btn").disabled=true;
   try {
     const current=state.selected;
-    await post("/api/revoke",{
+    const result=await post("/api/revoke",{
       path:current.path, expected_sha256:current.active_sha256,
     });
     await selectTrack(current.path);
-    notify("已撤销人工修正，恢复原有歌词来源");
+    notify(result.backup_ok
+      ? "已撤销人工修正并备份，恢复原有歌词来源"
+      : "已撤销修正，但备份失败，请检查日志", !result.backup_ok);
   } catch(error){notify(error.message,true);}
   finally{state.busy=false;}
 }

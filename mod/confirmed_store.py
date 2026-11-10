@@ -290,6 +290,28 @@ def history(*, path: str = "", title: str = "", artist: str = "",
         return [dict(row) for row in rows]
 
 
+
+def snapshot(*, keep: int = 20) -> Path:
+    """Consistent local APFS SQLite backup; never copy live WAL files manually."""
+    source = database_path()
+    if not source.is_file():
+        raise ValueError("No correction database exists")
+    folder = source.parent / "backups"
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if folder.is_symlink():
+        raise ValueError("Refusing symlinked backup directory")
+    os.chmod(folder, 0o700)
+    destination = folder / f"overrides-{time.time_ns()}.sqlite3"
+    with sqlite3.connect(str(source), timeout=10) as from_db:
+        with sqlite3.connect(str(destination), timeout=10) as to_db:
+            from_db.backup(to_db)
+    os.chmod(destination, 0o600)
+    backups = sorted(folder.glob("overrides-*.sqlite3"), key=lambda p: p.stat().st_mtime_ns,
+                     reverse=True)
+    for stale in backups[min(max(int(keep), 1), 100):]:
+        stale.unlink()
+    return destination
+
 def correction_count() -> int:
     if not database_path().is_file():
         return 0
