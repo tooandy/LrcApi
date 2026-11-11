@@ -222,6 +222,11 @@ def style():
     return send_from_directory(STATIC_ROOT, "style.css", mimetype="text/css")
 
 
+@app.get("/theme.js")
+def theme_script():
+    return send_from_directory(STATIC_ROOT, "theme.js", mimetype="text/javascript")
+
+
 @app.get("/app.js")
 def script():
     return send_from_directory(STATIC_ROOT, "app.js", mimetype="text/javascript")

@@ -38,6 +38,10 @@ def test_editor_page_and_local_browse(editor, tmp_path):
     assert b"script src=\"/app.js\"" in resp.data
     assert editor.get("/style.css").status_code==200
     assert editor.get("/app.js").status_code==200
+    assert editor.get("/theme.js").status_code==200
+    assert b'data-theme="system"' in resp.data
+    assert b'id="theme-select"' in resp.data
+    assert b'<option value="dark">' in resp.data
     session=editor.get("/api/session")
     assert session.json["mode"]=="loopback"
     assert session.json["writes_music"] is False
@@ -268,3 +272,18 @@ def test_lan_save_requires_password_csrf_and_origin(editor, tmp_path):
     assert response.status_code==200,response.json
     assert response.json["writes_music"] is False
     assert confirmed_store.correction_count()==1
+
+
+def test_theme_support_is_static_and_does_not_mutate_media(editor, tmp_path):
+    from pathlib import Path
+    audio_file(tmp_path)
+    css = editor.get("/style.css")
+    js = editor.get("/theme.js")
+    assert css.status_code == 200
+    assert b"prefers-color-scheme" in css.data
+    assert b'data-theme="dark"' in css.data
+    assert b"color-scheme:dark" in css.data
+    assert b"localStorage" in js.data
+    assert b'home-lrcapi-theme-v1' in js.data
+    assert b'getElementById("theme-select")' in js.data
+    assert not editor.get("/api/track?path=Song.flac").json["correction_id"]

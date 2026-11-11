@@ -83,6 +83,18 @@ protected. The Mac loopback entry retains its earlier behavior.
    matches); **撤销人工修正** removes the SQLite override while preserving
    the history. Restore the exported .lrc first when applicable.
 
+### Theme
+
+The upper-right **外观** selector offers **跟随系统** (the default), **浅色**
+and **深色**. All lyric and browsing surfaces are styled for both color
+schemes, including the mobile layout. The choice is saved in **this browser's
+localStorage** (`home-lrcapi-theme-v1`), not in SQLite, audio files, or user
+credentials. Automatic mode follows system color-scheme changes without a
+reload. No CDN or third-party JavaScript is required. Modern browsers
+supporting the CSS `light-dark()` color function are expected.
+
+Run the isolated UI logic regression with `node --test tests/theme.test.mjs`.
+
 The editor binds only to `127.0.0.1` and `192.168.3.7` (not `0.0.0.0`).
 Source IPs must be loopback or within `192.168.3.0/24`; untrusted Host and
 Origin headers are blocked. LAN requests need separate password authentication

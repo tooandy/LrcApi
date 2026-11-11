@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="system">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="light dark">
   <title>歌词纠错台 · Home LrcAPI</title>
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
@@ -18,7 +19,18 @@
           <h1>歌词纠错台<span class="dot">.</span></h1>
         </div>
       </div>
-      <div class="top-status"><span class="status-led"></span> 家庭局域网 · 密码保护 <span class="status-divider">/</span> 不自动修改 NAS</div>
+      <div class="top-actions">
+        <div class="top-status"><span class="status-led"></span> 家庭局域网 · 密码保护 <span class="status-divider">/</span> 不自动修改 NAS</div>
+        <label class="theme-control" for="theme-select">
+          <span class="theme-icon" aria-hidden="true">◐</span>
+          <span class="theme-label">外观</span>
+          <select id="theme-select" aria-label="页面外观" autocomplete="off">
+            <option value="system">跟随系统</option>
+            <option value="light">浅色</option>
+            <option value="dark">深色</option>
+          </select>
+        </label>
+      </div>
     </header>
 
     <main class="workspace">
