@@ -13,7 +13,8 @@ Clients → Debian Nginx HTTPS :7193 / legacy HTTP :28883
                       ├─ NAS NFS: existing .lrc / embedded lyrics
                       └─ NetEase, Kugou, LRCLIB (bounded providers)
 
-Mac mini 127.0.0.1:28886 [separate correction editor, NOT reverse proxied]
+Mac mini 127.0.0.1:28886 + 192.168.3.7:28886 [LAN-restricted editor;
+                                                  NOT reverse proxied]
                       ├─ browse folders on demand, never crawl entire NAS
                       ├─ inspect, edit, save and undo SQLite corrections
                       └─ optional one-track .lrc export with Mac backup
@@ -53,9 +54,23 @@ copy all tracks.
 
 ## Using the correction page
 
-On the **Mac mini itself**, open:
+On **Mac mini itself**, open (no new password prompt):
 
     http://127.0.0.1:28886/
+
+From another device connected to the **home LAN 192.168.3.0/24**, open:
+
+    http://192.168.3.7:28886/
+
+The browser prompts for HTTP Basic credentials: username `lyrics`, with a
+separate strong generated password kept only in the Mac's private file
+`~/.config/home-server/lrcapi-editor.env` (mode 0600). To view it locally:
+
+    sed -n 's/^LRCAPI_EDITOR_PASSWORD=//p' ~/.config/home-server/lrcapi-editor.env
+
+Do not commit, paste, or send this password to a group. LAN clients always
+require authentication; even browsing the library and fetching the JS are
+protected. The Mac loopback entry retains its earlier behavior.
 
 1. Browse artist → album → track; filter names in the current directory.
 2. See the current active lyric (existing .lrc is used by default).
@@ -68,10 +83,17 @@ On the **Mac mini itself**, open:
    matches); **撤销人工修正** removes the SQLite override while preserving
    the history. Restore the exported .lrc first when applicable.
 
-The editor binds to `127.0.0.1:28886` only, uses a random CSRF token and
-a strict Host/Origin policy. It has **no public reverse proxy and no remote
-password login**. To use it remotely, first set up a trusted SSH tunnel
-over Tailscale; do not port-forward :28886 from the router.
+The editor binds only to `127.0.0.1` and `192.168.3.7` (not `0.0.0.0`).
+Source IPs must be loopback or within `192.168.3.0/24`; untrusted Host and
+Origin headers are blocked. LAN requests need separate password authentication
+with rate-limited failures, and writes still need a random CSRF token.
+
+**Security limit:** This LAN address is HTTP, not HTTPS. HTTP Basic encodes
+credentials but does not encrypt them on the network. Use only a trusted home
+Wi-Fi/LAN, and **do not forward TCP 28886 from the router to the Internet**.
+For secure access from other networks, add a separate HTTPS/Tailscale
+authenticated route instead of widening the bind address. Debian Nginx and
+the existing public lyrics API remain unchanged.
 
 ## Running and managing Python with uv
 

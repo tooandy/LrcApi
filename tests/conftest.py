@@ -9,6 +9,7 @@ os.environ.setdefault("LRCAPI_READ_ONLY", "1")
 @pytest.fixture(autouse=True)
 def isolation(tmp_path, monkeypatch):
     monkeypatch.setenv("API_AUTH", "offline-test-key")
+    monkeypatch.setenv("LRCAPI_EDITOR_PASSWORD", "offline-test-password-for-lan-2026")
     monkeypatch.setenv("LRCAPI_DB_PATH", str(tmp_path / "private" / "confirmed.sqlite3"))
     music = tmp_path / "music"
     music.mkdir()

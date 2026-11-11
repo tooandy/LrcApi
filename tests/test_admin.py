@@ -39,7 +39,7 @@ def test_editor_page_and_local_browse(editor, tmp_path):
     assert editor.get("/style.css").status_code==200
     assert editor.get("/app.js").status_code==200
     session=editor.get("/api/session")
-    assert session.json["mode"]=="loopback-only"
+    assert session.json["mode"]=="loopback"
     assert session.json["writes_music"] is False
     result=editor.get("/api/browse").json
     assert result["items"][0]["name"]=="Song.flac"
@@ -89,7 +89,7 @@ def test_admin_rejects_foreign_origin_missing_csrf_and_invalid_host(editor,tmp_p
         "Origin":"https://evil.example","X-CSRF-Token":CSRF,
     }).status_code==403
     assert editor.get("/api/browse",headers={"Host":"evil.example"}).status_code==403
-    assert editor.get("/api/browse",environ_overrides={"REMOTE_ADDR":"192.168.3.4"}).status_code==403
+    assert editor.get("/api/browse",environ_overrides={"REMOTE_ADDR":"192.168.3.4"}).status_code==401
     assert editor.post("/api/save",data="{}",
                        headers={"X-CSRF-Token":CSRF}).status_code==415
 
@@ -215,3 +215,56 @@ def test_export_refuses_outside_nfs_and_changed_sidecar(editor, tmp_path):
         },headers=headers())
         assert again.status_code==400
         assert "Other program" in audio.with_suffix(".lrc").read_text()
+
+
+def test_lan_requires_password_and_home_subnet(editor, tmp_path):
+    import base64
+    audio_file(tmp_path)
+    lan = {"REMOTE_ADDR": "192.168.3.42", "HTTP_HOST": "192.168.3.7:28886"}
+    def basic(user, password):
+        token=base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
+        return {"Authorization": f"Basic {token}"}
+
+    assert editor.get("/", environ_overrides=lan).status_code == 401
+    assert editor.get("/", environ_overrides=lan).headers["WWW-Authenticate"].startswith("Basic")
+    assert editor.get("/api/session", environ_overrides=lan).status_code == 401
+    assert editor.get("/", environ_overrides=lan,
+                      headers=basic("lyrics","wrong")).status_code == 401
+    assert editor.get("/", environ_overrides=lan,
+                      headers=basic("wrong","offline-test-password-for-lan-2026")).status_code == 401
+    granted=editor.get("/api/session", environ_overrides=lan,
+                       headers=basic("lyrics","offline-test-password-for-lan-2026"))
+    assert granted.status_code == 200
+    assert granted.json["mode"] == "lan-authenticated"
+    assert granted.json["csrf"]
+    assert editor.get("/api/browse", environ_overrides=lan,
+                      headers=basic("lyrics","offline-test-password-for-lan-2026")).status_code == 200
+    for peer in ("192.168.4.21", "10.0.0.1", "100.100.0.1", "203.0.113.99"):
+        network = {"REMOTE_ADDR": peer, "HTTP_HOST": "192.168.3.7:28886"}
+        assert editor.get("/", environ_overrides=network,
+                          headers=basic("lyrics","offline-test-password-for-lan-2026")).status_code == 403
+    assert editor.get("/", environ_overrides={"REMOTE_ADDR": "192.168.3.43",
+                          "HTTP_HOST": "evil.example"},
+                      headers=basic("lyrics","offline-test-password-for-lan-2026")).status_code == 403
+
+
+def test_lan_save_requires_password_csrf_and_origin(editor, tmp_path):
+    import base64
+    audio_file(tmp_path)
+    token=base64.b64encode(b"lyrics:offline-test-password-for-lan-2026").decode()
+    headers={"Authorization":"Basic "+token}
+    network={"REMOTE_ADDR":"192.168.3.50", "HTTP_HOST":"192.168.3.7:28886"}
+    song=editor.get("/api/track?path=Song.flac",headers=headers,environ_overrides=network).json
+    payload={"path":"Song.flac","lyrics":"[00:02.00]LAN correction",
+             "expected_sha256":song["active_sha256"]}
+    assert editor.post("/api/save",json=payload,headers=headers,
+                       environ_overrides=network).status_code==403
+    assert editor.post("/api/save",json=payload,headers={**headers,"X-CSRF-Token":CSRF,
+                       "Origin":"http://evil.example"},environ_overrides=network).status_code==403
+    response=editor.post("/api/save",json=payload,
+                         headers={**headers,"X-CSRF-Token":CSRF,
+                                  "Origin":"http://192.168.3.7:28886"},
+                         environ_overrides=network)
+    assert response.status_code==200,response.json
+    assert response.json["writes_music"] is False
+    assert confirmed_store.correction_count()==1

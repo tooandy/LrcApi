@@ -1,11 +1,13 @@
-"""Minimal local-only lyric editor. Never routed through the public API.
+"""LAN-restricted lyric editor with independent credentials.
 
-Only this separate loopback process can mutate the SQLite corrections DB.
-No music files are opened for writing.
+Socket is bound to loopback and the Mac's home-LAN interface only.
+Localhost keeps the original behavior; LAN clients require a separate password.
+There is no exposure through the public lyrics API / Debian reverse proxy.
 """
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import hmac
 import logging
 import os
@@ -13,6 +15,8 @@ from pathlib import Path
 import re
 import secrets
 import sys
+import threading
+import time
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 from waitress import serve
@@ -22,6 +26,14 @@ from mod import confirmed_store, searchx
 
 LOG = logging.getLogger(__name__)
 PORT = 28886
+LAN_HOST = "192.168.3.7"
+LAN_NETWORK = ipaddress.ip_network("192.168.3.0/24")
+ALLOWED_HOSTS = {
+    f"127.0.0.1:{PORT}", f"localhost:{PORT}", "localhost", f"{LAN_HOST}:{PORT}",
+}
+_ALLOWED_ORIGINS = {f"http://{name}" for name in ALLOWED_HOSTS if ":" in name}
+_AUTH_FAILURES: dict[str, tuple[int, float]] = {}
+_AUTH_LOCK = threading.Lock()
 MAX_ITEMS = 350
 AUDIO_EXTENSIONS = {
     ".flac", ".mp3", ".m4a", ".mp4", ".ogg", ".opus", ".aac", ".wav",
@@ -115,31 +127,81 @@ def _current(relative: str) -> dict:
     return result
 
 
+def _client_is_loopback() -> bool:
+    return request.remote_addr in ("127.0.0.1", "::1")
+
+
+def _allow_client() -> bool:
+    try:
+        address = ipaddress.ip_address(request.remote_addr or "")
+        return address.is_loopback or address in LAN_NETWORK
+    except ValueError:
+        return False
+
+
+def _authenticate_lan():
+    """Browser-native Basic Auth only on LAN; localhost remains unchanged."""
+    peer = request.remote_addr or ""
+    password = os.environ.get("LRCAPI_EDITOR_PASSWORD", "")
+    if not password or len(password) < 24:
+        LOG.error("LAN editor password is absent or weak; rejecting LAN request")
+        return jsonify({"error": "LAN editor is not configured"}), 503
+    with _AUTH_LOCK:
+        count, expires = _AUTH_FAILURES.get(peer, (0, 0.0))
+        if expires <= time.monotonic():
+            count = 0
+        if count >= 12:
+            return jsonify({"error": "Too many authentication attempts"}), 429
+
+    auth = request.authorization
+    valid = bool(auth and auth.type == "basic" and
+                 hmac.compare_digest(auth.username or "", "lyrics") and
+                 hmac.compare_digest(auth.password or "", password))
+    if valid:
+        with _AUTH_LOCK:
+            _AUTH_FAILURES.pop(peer, None)
+        return None
+
+    with _AUTH_LOCK:
+        existing, expiry = _AUTH_FAILURES.get(peer, (0, 0))
+        if expiry <= time.monotonic():
+            existing = 0
+        _AUTH_FAILURES[peer] = (existing + 1, time.monotonic() + 120)
+    response = jsonify({"error": "LAN authentication required"})
+    response.status_code = 401
+    response.headers["WWW-Authenticate"] = 'Basic realm="Home Lyrics Editor", charset="UTF-8"'
+    return response
+
+
 @app.before_request
 def security_gate():
-    # Host validation blocks DNS-rebinding. Network restriction is also enforced
-    # at the socket level, with Flask test client using localhost.
-    if request.remote_addr not in ("127.0.0.1", "::1"):
-        return jsonify({"error": "loopback only"}), 403
-    if request.host.lower() not in (f"127.0.0.1:{PORT}", f"localhost:{PORT}", "localhost"):
+    # Neither Tailscale nor arbitrary interfaces are listening. Check source
+    # anyway to fail closed if an operator later changes the bind address.
+    if not _allow_client():
+        return jsonify({"error": "home LAN only"}), 403
+    if request.host.lower() not in ALLOWED_HOSTS:
         return jsonify({"error": "untrusted Host"}), 403
     if request.method not in ("GET", "HEAD", "POST"):
         return jsonify({"error": "not allowed"}), 405
+    if not _client_is_loopback():
+        forbidden = _authenticate_lan()
+        if forbidden is not None:
+            return forbidden
     if request.method == "POST":
         if not request.is_json:
             return jsonify({"error": "JSON only"}), 415
         supplied = request.headers.get("X-CSRF-Token", "")
         if not supplied or not hmac.compare_digest(supplied, CSRF):
             return jsonify({"error": "CSRF verification failed"}), 403
-        origin = request.headers.get("Origin", "")
-        if origin and origin.lower() not in (
-                f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"):
+        origin = request.headers.get("Origin", "").lower()
+        if origin and origin not in _ALLOWED_ORIGINS:
             return jsonify({"error": "foreign Origin"}), 403
 
 
 @app.after_request
 def protective_headers(response):
     response.headers["Cache-Control"] = "no-store"
+    response.headers["Vary"] = "Authorization"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -167,7 +229,7 @@ def script():
 
 @app.get("/api/session")
 def session():
-    return jsonify({"csrf": CSRF, "mode": "loopback-only",
+    return jsonify({"csrf": CSRF, "mode": "lan-authenticated" if not _client_is_loopback() else "loopback",
                     "name": "歌词纠错台", "writes_music": False})
 
 
@@ -333,13 +395,13 @@ def restore_sidecar():
         return jsonify({"error": str(exc)}), 400
 
 def main():
-    if os.environ.get("LRCAPI_ADMIN_ALLOW_NETWORK"):
-        raise RuntimeError("Network-exposed editor is deliberately unsupported")
     if not os.environ.get("HOME_SERVER_MUSIC_ROOT"):
         raise RuntimeError("Music root is required")
+    if len(os.environ.get("LRCAPI_EDITOR_PASSWORD", "")) < 24:
+        raise RuntimeError("LAN editor password is not configured")
     logging.basicConfig(level=logging.INFO)
-    LOG.info("Starting loopback-only correction UI on http://127.0.0.1:%d", PORT)
-    serve(app, host="127.0.0.1", port=PORT, threads=3,
+    LOG.info("Starting editor on localhost + home LAN interface, port %d", PORT)
+    serve(app, listen=f"127.0.0.1:{PORT} {LAN_HOST}:{PORT}", threads=3,
           connection_limit=32, channel_timeout=15, max_request_body_size=250_000)
 
 
