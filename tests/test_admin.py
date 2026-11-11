@@ -38,6 +38,18 @@ def test_editor_page_and_local_browse(editor, tmp_path):
     assert b"script src=\"/app.js\"" in resp.data
     assert editor.get("/style.css").status_code==200
     assert editor.get("/app.js").status_code==200
+    assert editor.get("/lyric-time.js").status_code == 200
+    assert b'id="track-audio"' in resp.data
+    assert b'id="sync-lyrics"' in resp.data
+    assert b'id="prev-version"' in resp.data
+    assert b'id="next-version"' in resp.data
+    assert b'id="shift-earlier"' in resp.data
+    assert b'id="shift-later"' in resp.data
+    assert b'id="offset-step"' in resp.data
+    assert b'id="align-line-btn"' in resp.data
+    assert b'id="raw-editor-panel"' in resp.data
+    assert b'<script src="/lyric-time.js"' in resp.data
+
     assert editor.get("/theme.js").status_code==200
     assert b'data-theme="system"' in resp.data
     assert b'id="theme-select"' in resp.data
@@ -287,3 +299,50 @@ def test_theme_support_is_static_and_does_not_mutate_media(editor, tmp_path):
     assert b'home-lrcapi-theme-v1' in js.data
     assert b'getElementById("theme-select")' in js.data
     assert not editor.get("/api/track?path=Song.flac").json["correction_id"]
+
+
+
+def test_editor_can_stream_only_music_with_http_range(editor, tmp_path):
+    import base64
+    path = audio_file(tmp_path, name="Test Song.mp3")
+    path.write_bytes(b"abcdefghijklmnopqrstuvwxyz")
+    source = "/api/audio?path=Test%20Song.mp3"
+    info = editor.get(source)
+    assert info.status_code == 200
+    assert info.mimetype == "audio/mpeg"
+    assert info.data == b"abcdefghijklmnopqrstuvwxyz"
+    assert "media-src 'self'" in info.headers["Content-Security-Policy"]
+    part = editor.get(source, headers={"Range": "bytes=5-9"})
+    assert part.status_code == 206
+    assert part.data == b"fghij"
+    assert part.headers["Content-Range"] == "bytes 5-9/26"
+    assert part.headers["Accept-Ranges"] == "bytes"
+    assert part.headers["Cache-Control"] == "no-store"
+    missing = editor.get("/api/audio?path=../../etc/passwd")
+    assert missing.status_code == 400
+    assert editor.get("/api/audio?path=/etc/passwd").status_code == 400
+    assert editor.get("/api/audio?path=Test%20Song.lrc").status_code == 400
+    assert editor.get("/api/audio?path=Test%20Song.mp3",
+                      headers={"Range": "bytes=9999-"}).status_code == 416
+    # LAN access follows the same password and host validation as the editor.
+    lan = {"REMOTE_ADDR": "192.168.3.9", "HTTP_HOST": "192.168.3.7:28886"}
+    assert editor.get(source, environ_overrides=lan).status_code == 401
+    token = base64.b64encode(b"lyrics:offline-test-password-for-lan-2026").decode()
+    secure = editor.get(source, environ_overrides=lan,
+                        headers={"Authorization": "Basic " + token, "Range": "bytes=0-3"})
+    assert secure.status_code == 206
+    assert secure.data == b"abcd"
+    assert editor.get(source, environ_overrides={"REMOTE_ADDR": "192.168.4.9",
+                      "HTTP_HOST": "192.168.3.7:28886"},
+                      headers={"Authorization": "Basic " + token}).status_code == 403
+
+
+def test_browser_audio_endpoint_rejects_non_browser_codec_and_symlinks(editor, tmp_path):
+    root = tmp_path / "music"
+    root.mkdir(exist_ok=True)
+    (root / "Unsupported.dsf").write_bytes(b"pretend DSD")
+    assert editor.get("/api/audio?path=Unsupported.dsf").status_code == 415
+    target = tmp_path / "outside.flac"
+    target.write_bytes(b"outside")
+    (root / "escape.flac").symlink_to(target)
+    assert editor.get("/api/audio?path=escape.flac").status_code == 400

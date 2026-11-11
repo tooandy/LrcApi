@@ -18,7 +18,7 @@ import sys
 import threading
 import time
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 from waitress import serve
 
 from api.lyrics import _local_candidate
@@ -207,7 +207,7 @@ def protective_headers(response):
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'self'; style-src 'self'; "
-        "connect-src 'self'; img-src 'self' data:; "
+        "connect-src 'self'; media-src 'self'; img-src 'self' data:; "
         "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
     return response
 
@@ -225,6 +225,11 @@ def style():
 @app.get("/theme.js")
 def theme_script():
     return send_from_directory(STATIC_ROOT, "theme.js", mimetype="text/javascript")
+
+
+@app.get("/lyric-time.js")
+def lyric_time_script():
+    return send_from_directory(STATIC_ROOT, "lyric-time.js", mimetype="text/javascript")
 
 
 @app.get("/app.js")
@@ -268,6 +273,41 @@ def browse():
         entries.sort(key=lambda e: (e["kind"] != "folder", e["name"].casefold()))
         return jsonify({"path": _relative(folder), "items": entries[:MAX_ITEMS],
                         "truncated": len(entries) > MAX_ITEMS or visited > 5000})
+    except (ValueError, OSError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+# Browser-compatible formats; unsupported codecs need a separate transcoder,
+# never serve arbitrary library files through the audio endpoint.
+AUDIO_MIMES = {
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".mp4": "audio/mp4",
+    ".m4b": "audio/mp4",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".wav": "audio/wav",
+    ".aiff": "audio/aiff",
+}
+
+
+@app.get("/api/audio")
+def audio_stream():
+    """Serve only requested audio bytes with native HTTP Range support.
+
+    Works across the private NFS mount without copying, changing, or scanning
+    media. The before_request LAN password and Host/source checks apply here
+    exactly as to the edit endpoints.
+    """
+    try:
+        track_path = _resolve(request.args.get("path", ""), audio=True)
+        mimetype = AUDIO_MIMES.get(track_path.suffix.lower())
+        if not mimetype:
+            return jsonify({"error": "该音频格式暂不支持浏览器直接播放"}), 415
+        return send_file(track_path, mimetype=mimetype, as_attachment=False,
+                         conditional=True, max_age=0)
     except (ValueError, OSError) as exc:
         return jsonify({"error": str(exc)}), 400
 

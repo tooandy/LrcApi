@@ -72,16 +72,39 @@ Do not commit, paste, or send this password to a group. LAN clients always
 require authentication; even browsing the library and fetching the JS are
 protected. The Mac loopback entry retains its earlier behavior.
 
-1. Browse artist → album → track; filter names in the current directory.
-2. See the current active lyric (existing .lrc is used by default).
-3. Edit the draft, or deliberately fetch online candidate versions.
-4. Press **保存纠错到 SQLite**. The correction is saved on local APFS.
-5. Optional: press **同步到同名 .lrc** if Navidrome needs to read the
-   corrected lyrics from disk. This action is not automatic and writes
-   the NAS only after confirmation. A local backup is recorded.
-6. **恢复原 .lrc** restores the previous physical file (only if SHA-256
-   matches); **撤销人工修正** removes the SQLite override while preserving
-   the history. Restore the exported .lrc first when applicable.
+1. Browse artist → album → track; use the native HTML5 audio player to
+   listen while the active sidecar or embedded LRC highlights each timed line.
+   Select a line to calibrate it, or click its timestamp to seek.
+2. Press **寻找网络候选** on demand to load independent alternative lyrics.
+   Swipe horizontally in the lyrics panel or use its arrow controls to
+   switch versions at **the same audio playback position**. None are
+   automatically accepted.
+3. Set a shift step between 0.01 and 10 seconds (e.g. 0.1 / 0.5 / 1).
+   Press **−** to advance the lyrics or **+** to delay them, on any
+   candidate including the default lyrics. Shifts are reversible even when
+   an early timestamp is temporarily clamped to 0.
+4. If a particular line drifts, select the lyric and press **把选中行对齐播放时刻**
+   to timestamp that line at the current audio position. Untimed plain-text
+   lyrics can be timestamped one line at a time. Expand **精细编辑歌词文本 /
+   时间标签** for spelling fixes and detailed raw LRC editing.
+5. Every selection, swipe, preview and timing change is **browser-only**
+   until **保存纠错到 SQLite** is clicked. Saving writes one manual correction
+   and a backup on the Mac. Existing NAS sidecar and audio remain unchanged.
+6. **同步到同名 .lrc** is a *separate*, explicit per-song operation (for
+   Navidrome), with an original sidecar backup and confirmation; rollback
+   and SQLite correction revocation are available independently.
+
+### Playback protocol and supported formats
+
+The editor's private `GET /api/audio?path=...` streams the one selected audio
+file read-only from the existing NAS NFS mount with HTTP Range support (206).
+It reuses the editor's trusted LAN IP, Host, password and path checks;
+**the public LrcAPI / reverse proxy do not serve audio**. Native browser
+playback works with common MP3/M4A/AAC/FLAC/WAV/OGG/Opus formats depending
+on the browser. APE/DSF/WMA require transcoding and are not offered as
+playback formats; lyric editing still works. No bulk file import or NAS
+writeback is involved. HTTP Basic on home LAN is not TLS-encrypted, so
+do not port-forward this private editor to the Internet.
 
 ### Theme
 

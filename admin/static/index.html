@@ -7,6 +7,7 @@
   <title>歌词纠错台 · Home LrcAPI</title>
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css">
+  <script src="/lyric-time.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -68,11 +69,11 @@
           <div class="onboarding-note">
             <div class="onboarding-icon">✦</div>
             <h3>只修正真正有问题的歌词</h3>
-            <p>原有 .lrc 与内嵌歌词继续默认生效。如果发现时间轴、错字或整首匹配错误，在这里改好后保存即可。</p>
+            <p>在左侧选择歌曲后直接试听，同步歌词会跟随播放高亮。发现歌词提前、滞后或版本错误时，切换候选、微调时间轴，确认后再保存。</p>
             <div class="features">
-              <span>01 · 默认使用本地歌词</span>
-              <span>02 · 修正覆盖到 SQLite</span>
-              <span>03 · 随时撤销回原版</span>
+              <span>01 · 边听边对照</span>
+              <span>02 · 左右切换歌词版本</span>
+              <span>03 · 一键微调时间轴</span>
             </div>
           </div>
         </div>
@@ -84,6 +85,57 @@
             <div><span class="meta-label">时长</span><span id="meta-duration">—</span></div>
           </div>
 
+          <section class="playback-panel" aria-label="歌曲试听">
+            <div class="playback-heading">
+              <div>
+                <div class="eyebrow">LISTEN &amp; COMPARE</div>
+                <h3>播放音乐 · 歌词跟随</h3>
+              </div>
+              <span id="playback-time" class="playback-time">00:00 / --:--</span>
+            </div>
+            <audio id="track-audio" controls preload="metadata" playsinline aria-label="当前歌曲播放器"></audio>
+            <p id="playback-hint" class="helper-line">选择歌曲后点击播放，只有需要时才从 NAS 按段读取音频。</p>
+          </section>
+
+          <section class="sync-workbench" aria-label="同步歌词纠错">
+            <div class="version-bar">
+              <button class="version-arrow" id="prev-version" type="button" aria-label="上一版歌词">‹</button>
+              <div class="version-heading">
+                <div class="eyebrow" id="version-position">01 / 01 · VERSION</div>
+                <h3 id="version-title">当前生效歌词</h3>
+                <p id="version-subtitle" class="muted">在播放过程中左右滑动，比较不同歌词版本</p>
+              </div>
+              <button class="version-arrow" id="next-version" type="button" aria-label="下一版歌词">›</button>
+            </div>
+            <div class="version-dots" id="version-dots" aria-label="可切换的歌词版本"></div>
+            <div class="sync-lyrics" id="sync-lyrics" aria-label="逐行同步歌词" tabindex="0">
+              <p class="sync-empty">请选择歌曲，播放时歌词将在这里跟随高亮。</p>
+            </div>
+            <div class="timing-toolbar">
+              <div class="timing-label">
+                <strong>调整整首歌词的时间轴</strong>
+                <span>− 提前 / ＋ 延后</span>
+              </div>
+              <div class="timing-actions">
+                <label class="step-control" for="offset-step">步长 <input id="offset-step"
+                  type="number" min="0.01" max="10" step="0.05" value="0.5"
+                  inputmode="decimal" aria-label="时间轴微调步长（秒）"> 秒</label>
+                <button class="shift-button" id="shift-earlier" type="button" title="整首歌词提前一个步长">−</button>
+                <button class="shift-button" id="shift-later" type="button" title="整首歌词延后一个步长">＋</button>
+                <span id="version-offset" class="version-offset">未调整</span>
+              </div>
+            </div>
+            <div class="line-actions">
+              <button id="align-line-btn" class="secondary-button" type="button" disabled>把选中行对齐播放时刻</button>
+              <button id="reset-version" class="ghost-button" type="button">还原当前版本</button>
+              <button class="ghost-button" id="search-candidates" type="button">寻找网络候选 ↗</button>
+            </div>
+            <p id="sync-hint" class="sync-hint">点击歌词可选中某一行，再按“对齐播放时刻”精确打点。点击行前的播放符号可跳至该句；左右滑动切换版本不会中断播放。</p>
+          </section>
+
+          <details class="raw-editor" id="raw-editor-panel">
+            <summary>精细编辑歌词文本 / 时间标签 <span>⌄</span></summary>
+            <p class="helper-line">这里仍可直接修改错字、增删歌词和逐个时间标签；上方微调或对齐也会同步更新此草稿。</p>
           <div class="lyric-columns">
             <div class="lyric-section">
               <div class="section-heading">
@@ -95,24 +147,25 @@
             <div class="lyric-section">
               <div class="section-heading">
                 <h3>你的修正版</h3>
-                <button class="text-button" id="reset-draft" type="button">恢复当前内容</button>
+                <button class="text-button" id="reset-draft" type="button">还原此版本</button>
               </div>
               <textarea id="draft-lyrics" spellcheck="false" placeholder="在这里修正歌词、时间轴或整首替换…" aria-label="修正版歌词"></textarea>
             </div>
           </div>
 
+          </details>
+
           <div class="action-row">
             <button class="primary-button" id="save-btn" type="button">保存纠错到 SQLite</button>
             <button class="secondary-button" id="revert-btn" type="button" disabled>撤销人工修正</button>
-            <button class="ghost-button" id="search-candidates" type="button">寻找网络候选 <span aria-hidden="true">↗</span></button>
             <button class="secondary-button" id="export-btn" type="button" hidden>同步到同名 .lrc</button>
             <button class="secondary-button" id="restore-export-btn" type="button" hidden>恢复原 .lrc</button>
           </div>
-          <div class="helper-line">“保存”仅写 SQLite。需要 Navidrome 读取修正时，可单独确认同步 .lrc；写入前会在 Mac 本地备份旧文件。永不修改音频本体。</div>
+          <div class="helper-line">试听、左右切换、微调与单行打点仅在当前页面预览；点击“保存纠错到 SQLite”才会保存当前选中版本。“保存”仅写 SQLite。需要 Navidrome 读取修正时，可单独确认同步 .lrc；写入前会在 Mac 本地备份旧文件。永不修改音频本体。</div>
 
           <section class="extras">
             <details id="candidate-panel">
-              <summary>网络歌词候选 <span id="candidate-count"></span></summary>
+              <summary>候选版本快速跳转 <span id="candidate-count"></span></summary>
               <div class="candidate-items" id="candidate-items"><p class="muted">点击“寻找网络候选”后，将列出可供你人工挑选的版本。</p></div>
             </details>
             <details id="history-panel">

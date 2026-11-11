@@ -25,10 +25,13 @@ jobs:
       - name: Verify Python version
         run: uv run --locked python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
       - name: Static critical errors
-        run: uv run --locked ruff check app.py api mod tests --select E9,F63,F7,F82
+        run: uv run --locked ruff check app.py api mod admin tests --select E9,F63,F7,F82
       - name: Regression / protocol contracts
         run: uv run --locked pytest -q
-      - name: Dark/light/system theme UI behavior
-        run: node --test tests/theme.test.mjs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Lyric timing, candidate comparison and theme UI behavior
+        run: node --test tests/*.test.mjs
       - name: Audit installed Python packages
         run: uv run --locked pip-audit --path .venv/lib/python3.12/site-packages
