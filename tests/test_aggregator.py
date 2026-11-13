@@ -118,3 +118,21 @@ def test_provider_malformed_metadata_and_non_finite_duration_are_rejected():
                                 "Track", "Artist", "Album", 210) is None
     assert searchx._quality(dict(base, duration=210),
                             "Track", "Artist", "Album", "NaN") is None
+
+
+
+def test_legacy_providers_preserve_real_source_identity_for_comparison():
+    searchx._CACHE.clear()
+    song = {"title": "Chasing Pavements", "artist": "Adele",
+            "album": "19", "lyrics": "[00:02.000]Words"}
+    with patch.object(searchx.kugou, "search", return_value=[dict(song)]), \
+         patch.object(searchx.netease, "search",
+                      return_value=[dict(song, lyrics="[00:03.000]Other timing")]), \
+         patch.object(searchx.lrclib, "search", return_value=[]):
+        matches = searchx.search_all("Chasing Pavements", "Adele", "19", timeout=.5)
+    assert len(matches) == 2
+    assert {row["source"] for row in matches} == {"kugou", "netease"}
+    assert {row["lyrics"] for row in matches} == {
+        "[00:02.000]Words", "[00:03.000]Other timing",
+    }
+    assert all(row["score"] == 1.0 for row in matches)

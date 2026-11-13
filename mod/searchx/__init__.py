@@ -21,7 +21,16 @@ _MAX_CACHE = 512
 
 def _run(provider, title, artist, album):
     try:
-        return provider.search(title, artist, album) or []
+        matches = provider.search(title, artist, album) or []
+        if not isinstance(matches, list):
+            return []
+        # Legacy providers omitted "source", so two genuinely different
+        # synchronized versions appeared as anonymous "network" results.
+        # Attribute provenance at the trusted adapter boundary, never from
+        # arbitrary artist/title/lyric fields returned by the provider.
+        source = provider.__name__.rsplit(".", 1)[-1]
+        return [dict(item, source=source) if isinstance(item, dict) else item
+                for item in matches]
     except Exception as exc:
         LOG.warning("Provider %s error: %s", provider.__name__, type(exc).__name__)
         return []

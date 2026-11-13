@@ -66,6 +66,11 @@ Demo / Instrumental / Remastered) are rejected in both directions;
 ordinary song titles like "I Want to Live" are not treated as versions.
 Malformed provider metadata or non-finite durations are dropped.
 The existing artist, album and duration matching guards remain active.
+Legacy Kugou and NetEase adapters now add trusted `source` labels in the
+aggregator, so two distinct candidate lyrics with the same metadata can
+be compared by provider instead of both appearing as anonymous "network"
+results. Distinct lyric texts/timings are deliberately not collapsed.
+
 
 HTTP contract tests cover `/lyrics`, `/jsonapi`,
 `/api/v1/lyrics/single` and `/api/v1/lyrics/advance`.
