@@ -52,6 +52,30 @@ SQLite pages and audit history add some overhead. Even 9000 tracks × 10 KB
 would be only about 90 MB of raw lyric content, but we intentionally do not
 copy all tracks.
 
+## Core matching correction (2026-11-14)
+
+The search aggregator now bounds its public `score` to **0.00–1.00**.
+Its metadata weights already summed to 1.00; the previous extra 0.08
+sync bonus produced a misleading 1.08 / "108%".
+Now metadata receives 92% and synchronized timestamps 8%. A perfect
+metadata score is **not human verification** of lyric words or timing:
+remote candidates still have `verified=false`.
+
+Explicitly conflicting versions (studio vs Live / Acoustic / Remix /
+Demo / Instrumental / Remastered) are rejected in both directions;
+ordinary song titles like "I Want to Live" are not treated as versions.
+Malformed provider metadata or non-finite durations are dropped.
+The existing artist, album and duration matching guards remain active.
+
+HTTP contract tests cover `/lyrics`, `/jsonapi`,
+`/api/v1/lyrics/single` and `/api/v1/lyrics/advance`.
+No routes, auth secrets, SQLite schema, or NAS data were changed.
+
+**Known separate gap:** legacy `/cover` and `/api/v1/cover/...` are
+currently intentionally **not registered** in the read-only gateway.
+The old cover implementation depended on insecure HTTP upstreams
+and must not be re-enabled without a safe read-only redesign.
+
 ## Using the correction page
 
 On **Mac mini itself**, open (no new password prompt):

@@ -67,3 +67,38 @@ def test_sidecar_symlink_outside_music_is_not_read(client, tmp_path):
                             headers={"Authorization":"offline-test-key"})
     assert result.status_code == 200
     assert result.json == []
+
+
+def test_legacy_core_http_routes_use_bounded_match_scores(client):
+    """Old /lyrics, /jsonapi and v1 alias responses share the fixed ranker."""
+    from mod import searchx
+
+    searchx._CACHE.clear()
+    exact = {"title": "Chasing Pavements", "artist": "Adele", "album": "19",
+             "lyrics": "[00:04.660]I've made up my mind", "source": "kugou"}
+    wrong_take = dict(exact, title="Chasing Pavements (Live)",
+                      lyrics="[00:04.660]Wrong performance")
+    query = "title=Chasing%20Pavements&artist=Adele&album=19"
+    token = {"Authorization": "offline-test-key"}
+
+    with patch.object(searchx.kugou, "search", return_value=[wrong_take, exact]), \
+         patch.object(searchx.netease, "search", return_value=[]), \
+         patch.object(searchx.lrclib, "search", return_value=[]):
+        json_resp = client.get("/jsonapi?" + query, headers=token)
+        assert json_resp.status_code == 200
+        assert len(json_resp.json) == 1
+        assert json_resp.json[0]["score"] == 1.0
+        assert json_resp.json[0]["synced"] is True
+        assert json_resp.json[0]["verified"] is False
+
+        v1_resp = client.get("/api/v1/lyrics/advance?" + query, headers=token)
+        assert v1_resp.status_code == 200
+        assert v1_resp.json == json_resp.json
+
+        raw_resp = client.get("/lyrics?" + query, headers=token)
+        assert raw_resp.status_code == 200
+        assert "I've made up my mind" in raw_resp.get_data(as_text=True)
+
+        v1_raw = client.get("/api/v1/lyrics/single?" + query, headers=token)
+        assert v1_raw.status_code == 200
+        assert v1_raw.data == raw_resp.data
