@@ -11,7 +11,7 @@ Clients → Debian Nginx HTTPS :7193 / legacy HTTP :28883
              ↳ Mac mini :28883 [read-only lyrics API]
                       ├─ Mac APFS SQLite: manual corrections only
                       ├─ NAS NFS: existing .lrc / embedded lyrics
-                      └─ NetEase, Kugou, LRCLIB (bounded providers)
+                      └─ NetEase, Kugou, LRCLIB, QQ Music (bounded providers)
 
 Mac mini 127.0.0.1:28886 + 192.168.3.7:28886 [LAN-restricted editor;
                                                   NOT reverse proxied]
@@ -76,10 +76,52 @@ HTTP contract tests cover `/lyrics`, `/jsonapi`,
 `/api/v1/lyrics/single` and `/api/v1/lyrics/advance`.
 No routes, auth secrets, SQLite schema, or NAS data were changed.
 
-**Known separate gap:** legacy `/cover` and `/api/v1/cover/...` are
-currently intentionally **not registered** in the read-only gateway.
-The old cover implementation depended on insecure HTTP upstreams
-and must not be re-enabled without a safe read-only redesign.
+**Old cover gap resolved (2026-11-14):** `/cover` and the
+`/api/v1/cover/{album,artist,music}` endpoints now use a small authenticated
+read-only QQ Music JPEG handler. This is **not** the old unsafe HTTP proxy.
+See the next section for its strict HTTPS allowlist and size limits.
+
+## QQ Music lyrics and artwork integration (2026-11-14)
+
+The codebase reuses two existing references without bringing a new runtime:
+the user's `tooandy/navidrome-qqmusic-plugin` (Go/TinyGo WASM, **artwork
+only**) and the MIT-licensed `Rain120/qq-music-api` lyric request logic.
+The Go Navidrome plugin is a **separate project**, not a dependency of
+this Python LrcAPI. Existing music files and SQLite data are unchanged.
+
+- Lyrics: anonymous QQ Music search
+  `music.search.SearchCgiService/DoSearchForQQMusicDesktop` at
+  `https://u.y.qq.com/cgi-bin/musicu.fcg`, then base64 synced LRC from
+  `https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg` using a
+  verified 14-character song MID. Search result title, artist, album, and
+  recording duration must match conservatively. Studio tracks do not
+  silently use concert album results. Maximum two QQ candidates per query,
+  added to the existing bounded aggregation pool; other providers remain
+  available and retain priority when scores tie.
+- Artwork: `GET /cover?artist=...&album=...` plus
+  `/api/v1/cover/album?artist=...&album=...`,
+  `/api/v1/cover/artist?artist=...`, and
+  `/api/v1/cover/music?artist=...&title=...&album=...`.
+  Every route needs the same **read-only API_AUTH** as `/lyrics`.
+  Only exact matching album or artist MIDs are accepted. The handler
+  builds fixed `https://y.gtimg.cn/music/photo_new/...` URLs (no caller
+  supplied URLs), rejects redirects, enforces JPEG content and a 2 MB
+  download bound, and returns image/jpeg. No audio or QQ account token.
+- A single opt-out flag, `LRCAPI_QQMUSIC_ENABLED=0`, disables both QQ
+  lyric aggregation and its artwork route, without disabling other
+  sources. For persistent production opt-out, add that environment
+  variable to the private Mac configuration files
+  `~/.config/home-server/lrcapi.env` **and**
+  `~/.config/home-server/lrcapi-editor.env`, then restart their respective
+  launchd user services. Do not commit or reveal either secret-bearing file.
+- The former `client_search_cp` request with `new_json=1` silently returned
+  zero songs. The integration **does not use** this broken form. No
+  extra Node.js service, dependency installation, database migration,
+  public proxy change, or NAS write is needed.
+- Test with `uv run --locked pytest -q` and
+  `node --test tests/*.test.mjs`. The QQ-specific Python suite mocks
+  network access and tests malformed responses, image size/content,
+  strict identity matching, bounded score and recovery with QQ disabled.
 
 ## Using the correction page
 

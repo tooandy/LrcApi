@@ -8,7 +8,7 @@ import threading
 import time
 import unicodedata
 
-from . import kugou, netease, lrclib
+from . import kugou, netease, lrclib, qqmusic
 
 LOG = logging.getLogger(__name__)
 # Global, bounded pool; per-request executor shutdown never blocks an HTTP worker.
@@ -116,8 +116,13 @@ def search_all(title, artist="", album="", timeout=7, duration=None):
         if hit is not None and hit[0] > time.monotonic():
             return [dict(v) for v in hit[1]]
 
+    # QQ Music is a fourth anonymous source. Turn it off independently via
+    # LRCAPI_QQMUSIC_ENABLED=0 without affecting other legacy sources.
+    providers = (kugou, netease)
+    if os.environ.get("LRCAPI_QQMUSIC_ENABLED", "1") == "1" and artist:
+        providers += (qqmusic,)
     tasks = []
-    for source in (kugou, netease):
+    for source in providers:
         if not _SLOTS.acquire(blocking=False):
             break
         try:
@@ -156,7 +161,14 @@ def search_all(title, artist="", album="", timeout=7, duration=None):
     ranked = [r for r in ranked if r["score"] >= .89]
     if ranked:
         # Prefer synchronized lyrics among equally credible metadata matches.
-        ranked.sort(key=lambda x: (x["score"], x["synced"]), reverse=True)
+        # Keep pre-existing provider preference when scores tie, so QQ
+        # Music does not unexpectedly replace an already working lyric.
+        ranked.sort(
+            key=lambda x: (
+                x["score"], x["synced"],
+                x.get("source") != "qqmusic",
+            ), reverse=True,
+        )
 
     with _CACHE_LOCK:
         if len(_CACHE) >= _MAX_CACHE:
